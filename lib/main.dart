@@ -1,12 +1,13 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shimmer/shimmer.dart';
+
+
+
 
 // --- PALETTE ---
 // Warna Zen
@@ -49,15 +50,7 @@ class AuthService {
   }
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-  ));
-  runApp(const VocabZenApp());
-}
+
 
 class VocabZenApp extends StatelessWidget {
   const VocabZenApp({super.key});
@@ -190,13 +183,16 @@ class _LoginPageState extends State<LoginPage> {
                             setState(() => _isLoading = true);
                             try {
                               await _authService.signInWithGoogle();
+                              // On success, AuthWrapper will handle navigation
                             } catch (e) {
-                              setState(() => _isLoading = false);
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text('Failed to sign in: $e')),
-                              );
+                              if (mounted) {
+                                setState(() => _isLoading = false);
+                                // ignore: use_build_context_synchronously
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text('Failed to sign in: $e')),
+                                );
+                              }
                             }
                           },
                           isLoading: _isLoading,
