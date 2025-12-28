@@ -1,36 +1,37 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // --- DATA ---
 // Data statis untuk aplikasi
 
 const Map<String, List<Map<String, String>>> vocabData = {
   'travel': [
-    {'word': "Itinerary", 'pronounce': "/īˈtinəˌrerē/", 'desc': "Rencana perjalanan yang terperinci."},
-    {'word': "Accommodation", 'pronounce': "/əˌkäməˈdāSH(ə)n/", 'desc': "Tempat tinggal sementara saat bepergian."},
-    {'word': "Destination", 'pronounce': "/ˌdestəˈnāSH(ə)n/", 'desc': "Tempat tujuan akhir perjalanan."},
-    {'word': "Luggage", 'pronounce': "/ˈləɡij/", 'desc': "Tas dan koper berisi barang bawaan."},
-    {'word': "Departure", 'pronounce': "/dəˈpärCHər/", 'desc': "Tindakan meninggalkan suatu tempat."},
-    {'word': "Arrival", 'pronounce': "/əˈrīvəl/", 'desc': "Tindakan sampai di tujuan."},
-    {'word': "Passport", 'pronounce': "/ˈpaspôrt/", 'desc': "Dokumen resmi untuk perjalanan internasional."},
-    {'word': "Visa", 'pronounce': "/ˈvēzə/", 'desc': "Izin masuk ke negara asing."},
-    {'word': "Souvenir", 'pronounce': "/ˌso͞ovəˈnir/", 'desc': "Oleh-oleh atau kenang-kenangan."},
-    {'word': "Embark", 'pronounce': "/əmˈbärk/", 'desc': "Naik ke kapal atau pesawat."},
+    {'word': "Itinerary", 'pronounce': "/aɪˈtɪnəˌrɛri/", 'desc': "A detailed plan for a journey."},
+    {'word': "Accommodation", 'pronounce': "/əˌkɒməˈdeɪʃ(ə)n/", 'desc': "A place to live or stay."},
+    {'word': "Destination", 'pronounce': "/ˌdɛstɪˈneɪʃ(ə)n/", 'desc': "The place to which someone is going."},
+    {'word': "Luggage", 'pronounce': "/ˈlʌɡɪdʒ/", 'desc': "Suitcases or other bags for travel."},
+    {'word': "Departure", 'pronounce': "/dɪˈpɑːrtʃər/", 'desc': "The action of leaving a place."},
+    {'word': "Arrival", 'pronounce': "/əˈraɪv(ə)l/", 'desc': "The action of arriving at a destination."},
+    {'word': "Passport", 'pronounce': "/ˈpæspɔːrt/", 'desc': "An official document for international travel."},
+    {'word': "Visa", 'pronounce': "/ˈviːzə/", 'desc': "Permission to enter a foreign country."},
+    {'word': "Souvenir", 'pronounce': "/ˌsuːvəˈnɪər/", 'desc': "A thing kept as a reminder of a place."},
+    {'word': "Embark", 'pronounce': "/ɪmˈbɑːrk/", 'desc': "To go on board a ship or aircraft."},
   ],
   'noun': [
-    {'word': "Freedom", 'pronounce': "/ˈfrēdəm/", 'desc': "Kekuatan atau hak untuk bertindak/berbicara."},
-    {'word': "Decision", 'pronounce': "/dəˈsiZHən/", 'desc': "Kesimpulan setelah pertimbangan."},
-    {'word': "Knowledge", 'pronounce': "/ˈnälij/", 'desc': "Fakta atau informasi yang diketahui."},
-    {'word': "Society", 'pronounce': "/səˈsīədē/", 'desc': "Sekelompok orang yang hidup bersama."},
-    {'word': "Ability", 'pronounce': "/əˈbilədē/", 'desc': "Kecakapan atau keterampilan."},
+    {'word': "Freedom", 'pronounce': "/ˈfriːdəm/", 'desc': "The power or right to act or speak freely."},
+    {'word': "Decision", 'pronounce': "/dɪˈsɪʒ(ə)n/", 'desc': "A conclusion reached after consideration."},
+    {'word': "Knowledge", 'pronounce': "/ˈnɒlɪdʒ/", 'desc': "Facts and information acquired by a person."},
+    {'word': "Society", 'pronounce': "/səˈsaɪəti/", 'desc': "People living together in a community."},
+    {'word': "Ability", 'pronounce': "/əˈbɪləti/", 'desc': "Possession of the skill to do something."},
   ],
   'kitchen': [
-    {'word': "Spatula", 'pronounce': "/ˈspaCHələ/", 'desc': "Alat dengan bilah datar lebar."},
-    {'word': "Whisk", 'pronounce': "/(h)wisk/", 'desc': "Alat untuk mengocok telur/krim."},
-    {'word': "Colander", 'pronounce': "/ˈkələndər/", 'desc': "Mangkuk berlubang untuk meniriskan."},
-    {'word': "Grater", 'pronounce': "/ˈɡrādər/", 'desc': "Alat memarut makanan jadi potongan kecil."},
-    {'word': "Kettle", 'pronounce': "/ˈkedl/", 'desc': "Wadah logam untuk merebus air."},
+    {'word': "Spatula", 'pronounce': "/ˈspætʃələ/", 'desc': "A utensil with a broad, flat blade."},
+    {'word': "Whisk", 'pronounce': "/wɪsk/", 'desc': "A utensil for whipping eggs or cream."},
+    {'word': "Colander", 'pronounce': "/ˈkʌləndər/", 'desc': "A bowl used to strain liquid from food."},
+    {'word': "Grater", 'pronounce': "/ˈɡreɪtər/", 'desc': "A device for grating food into small pieces."},
+    {'word': "Kettle", 'pronounce': "/ˈkɛt(ə)l/", 'desc': "A container used for boiling water."},
   ],
 };
 
@@ -104,8 +105,10 @@ class VocabZenApp extends StatelessWidget {
       theme: ThemeData(
         scaffoldBackgroundColor: kBackground,
         useMaterial3: true,
-        // Mensimulasikan font Serif dengan Georgia atau Times jika font Google tidak ada
-        fontFamily: 'Georgia', 
+        // Apply a Zen-style font from Google Fonts
+        textTheme: GoogleFonts.zenKakuGothicAntiqueTextTheme(
+          Theme.of(context).textTheme,
+        ),
         colorScheme: ColorScheme.fromSeed(seedColor: kSageGreen),
       ),
       home: const LoginPage(),
@@ -465,51 +468,30 @@ class VocabPlayerPage extends StatefulWidget {
   State<VocabPlayerPage> createState() => _VocabPlayerPageState();
 }
 
-class _VocabPlayerPageState extends State<VocabPlayerPage> with SingleTickerProviderStateMixin {
+class _VocabPlayerPageState extends State<VocabPlayerPage> {
   late List<Map<String, String>> words;
+  late PageController _pageController;
   int currentIndex = 0;
-  bool showBack = false;
-  late AnimationController _controller;
-  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
     words = vocabData[widget.category] ?? [];
-    
-    _controller = AnimationController(
-      vsync: this, 
-      duration: const Duration(milliseconds: 600),
-    );
-    _animation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOutBack),
-    );
+    _pageController = PageController();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pageController.dispose();
     super.dispose();
-  }
-
-  void _flipCard() {
-    if (showBack) {
-      _controller.reverse();
-    } else {
-      _controller.forward();
-    }
-    setState(() {
-      showBack = !showBack;
-    });
   }
 
   void _nextCard() {
     if (currentIndex < words.length - 1) {
-      setState(() {
-        showBack = false;
-        _controller.reset();
-        currentIndex++;
-      });
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
     } else {
       // Selesai
       Navigator.pop(context, true);
@@ -518,18 +500,15 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> with SingleTickerProv
 
   void _prevCard() {
     if (currentIndex > 0) {
-      setState(() {
-        showBack = false;
-        _controller.reset();
-        currentIndex--;
-      });
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final word = words[currentIndex];
-
     return Scaffold(
       backgroundColor: kSoftCream,
       appBar: AppBar(
@@ -551,31 +530,19 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> with SingleTickerProv
       body: Column(
         children: [
           Expanded(
-            child: Center(
-              child: GestureDetector(
-                onTap: _flipCard,
-                child: AnimatedBuilder(
-                  animation: _animation,
-                  builder: (context, child) {
-                    final angle = _animation.value * pi;
-                    final isBack = angle >= (pi / 2);
-                    
-                    return Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()
-                        ..setEntry(3, 2, 0.001) // perspective
-                        ..rotateY(angle),
-                      child: isBack 
-                        ? Transform(
-                            alignment: Alignment.center,
-                            transform: Matrix4.identity()..rotateY(pi),
-                            child: _buildCardBack(word),
-                          )
-                        : _buildCardFront(word),
-                    );
-                  },
-                ),
-              ),
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: words.length,
+              onPageChanged: (index) {
+                setState(() {
+                  currentIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                return Center(
+                  child: FlippableCard(word: words[index]),
+                );
+              },
             ),
           ),
           
@@ -615,6 +582,79 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> with SingleTickerProv
             ),
           )
         ],
+      ),
+    );
+  }
+}
+
+class FlippableCard extends StatefulWidget {
+  final Map<String, String> word;
+  const FlippableCard({super.key, required this.word});
+
+  @override
+  State<FlippableCard> createState() => _FlippableCardState();
+}
+
+class _FlippableCardState extends State<FlippableCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+  bool showBack = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _animation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOutBack),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _flipCard() {
+    // When the card is flipped, reset the state of the other card if it's flipped.
+    // This is handled by creating a new FlippableCard for each page.
+    if (showBack) {
+      _controller.reverse();
+    } else {
+      _controller.forward();
+    }
+    setState(() {
+      showBack = !showBack;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _flipCard,
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, child) {
+          final angle = _animation.value * pi;
+          final isBack = angle >= (pi / 2);
+          
+          return Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001) // perspective
+              ..rotateY(angle),
+            child: isBack 
+              ? Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..rotateY(pi),
+                  child: _buildCardBack(widget.word),
+                )
+              : _buildCardFront(widget.word),
+          );
+        },
       ),
     );
   }
@@ -668,6 +708,7 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> with SingleTickerProv
     );
   }
 }
+
 
 // --- 4. GRAMMAR QUIZ ---
 
