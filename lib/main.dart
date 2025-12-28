@@ -1,82 +1,12 @@
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-// --- DATA ---
-// Data statis untuk aplikasi
-
-const Map<String, List<Map<String, String>>> vocabData = {
-  'travel': [
-    {'word': "Itinerary", 'pronounce': "/aɪˈtɪnəˌrɛri/", 'desc': "A detailed plan for a journey."},
-    {'word': "Accommodation", 'pronounce': "/əˌkɒməˈdeɪʃ(ə)n/", 'desc': "A place to live or stay."},
-    {'word': "Destination", 'pronounce': "/ˌdɛstɪˈneɪʃ(ə)n/", 'desc': "The place to which someone is going."},
-    {'word': "Luggage", 'pronounce': "/ˈlʌɡɪdʒ/", 'desc': "Suitcases or other bags for travel."},
-    {'word': "Departure", 'pronounce': "/dɪˈpɑːrtʃər/", 'desc': "The action of leaving a place."},
-    {'word': "Arrival", 'pronounce': "/əˈraɪv(ə)l/", 'desc': "The action of arriving at a destination."},
-    {'word': "Passport", 'pronounce': "/ˈpæspɔːrt/", 'desc': "An official document for international travel."},
-    {'word': "Visa", 'pronounce': "/ˈviːzə/", 'desc': "Permission to enter a foreign country."},
-    {'word': "Souvenir", 'pronounce': "/ˌsuːvəˈnɪər/", 'desc': "A thing kept as a reminder of a place."},
-    {'word': "Embark", 'pronounce': "/ɪmˈbɑːrk/", 'desc': "To go on board a ship or aircraft."},
-  ],
-  'noun': [
-    {'word': "Freedom", 'pronounce': "/ˈfriːdəm/", 'desc': "The power or right to act or speak freely."},
-    {'word': "Decision", 'pronounce': "/dɪˈsɪʒ(ə)n/", 'desc': "A conclusion reached after consideration."},
-    {'word': "Knowledge", 'pronounce': "/ˈnɒlɪdʒ/", 'desc': "Facts and information acquired by a person."},
-    {'word': "Society", 'pronounce': "/səˈsaɪəti/", 'desc': "People living together in a community."},
-    {'word': "Ability", 'pronounce': "/əˈbɪləti/", 'desc': "Possession of the skill to do something."},
-  ],
-  'kitchen': [
-    {'word': "Spatula", 'pronounce': "/ˈspætʃələ/", 'desc': "A utensil with a broad, flat blade."},
-    {'word': "Whisk", 'pronounce': "/wɪsk/", 'desc': "A utensil for whipping eggs or cream."},
-    {'word': "Colander", 'pronounce': "/ˈkʌləndər/", 'desc': "A bowl used to strain liquid from food."},
-    {'word': "Grater", 'pronounce': "/ˈɡreɪtər/", 'desc': "A device for grating food into small pieces."},
-    {'word': "Kettle", 'pronounce': "/ˈkɛt(ə)l/", 'desc': "A container used for boiling water."},
-  ],
-};
-
-const List<Map<String, dynamic>> grammarQuestions = [
-  {
-    'question': "She _____ to the market yesterday.",
-    'options': [
-      {'text': "Go", 'desc': "Base form (Verb 1)."},
-      {'text': "Went", 'desc': "Past form (Verb 2)."},
-      {'text': "Gone", 'desc': "Past Participle (Verb 3)."},
-      {'text': "Going", 'desc': "Continuous form."}
-    ],
-    'correctIndex': 1
-  },
-  {
-    'question': "I have _____ seen that movie.",
-    'options': [
-      {'text': "Already", 'desc': "Adverb for completed action."},
-      {'text': "Yet", 'desc': "Used in negative sentences."},
-      {'text': "Since", 'desc': "From a past time until now."},
-      {'text': "Ago", 'desc': "Refers to past time."}
-    ],
-    'correctIndex': 0
-  },
-  {
-    'question': "If I _____ you, I would study harder.",
-    'options': [
-      {'text': "Was", 'desc': "Standard past singular."},
-      {'text': "Am", 'desc': "Present singular."},
-      {'text': "Were", 'desc': "Subjunctive mood."},
-      {'text': "Be", 'desc': "Base form."}
-    ],
-    'correctIndex': 2
-  },
-   {
-    'question': "This book is _____ than that one.",
-    'options': [
-      {'text': "Interesting", 'desc': "Adjective base."},
-      {'text': "More interesting", 'desc': "Comparative form."},
-      {'text': "Most interesting", 'desc': "Superlative form."},
-      {'text': "Interest", 'desc': "Noun form."}
-    ],
-    'correctIndex': 1
-  },
-];
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shimmer/shimmer.dart';
 
 // --- PALETTE ---
 // Warna Zen
@@ -86,7 +16,42 @@ const Color kSoftCream = Color(0xFFECEEEC);
 const Color kBackground = Color(0xFFF5F7F5);
 const Color kTextDark = Color(0xFF1F2937);
 
-void main() {
+// --- SERVICES ---
+class AuthService {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  Stream<User?> get user => _auth.authStateChanges();
+
+  Future<User?> signInWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        return null; // User cancelled
+      }
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final UserCredential userCredential =
+          await _auth.signInWithCredential(credential);
+      return userCredential.user;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> signOut() async {
+    await _googleSignIn.signOut();
+    await _auth.signOut();
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
@@ -105,28 +70,58 @@ class VocabZenApp extends StatelessWidget {
       theme: ThemeData(
         scaffoldBackgroundColor: kBackground,
         useMaterial3: true,
-        // Apply a Zen-style font from Google Fonts
         textTheme: GoogleFonts.zenKakuGothicAntiqueTextTheme(
           Theme.of(context).textTheme,
         ),
         colorScheme: ColorScheme.fromSeed(seedColor: kSageGreen),
       ),
-      home: const LoginPage(),
+      home: const AuthWrapper(),
+    );
+  }
+}
+
+// --- AUTH WRAPPER ---
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final authService = AuthService();
+    return StreamBuilder<User?>(
+      stream: authService.user,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasData && snapshot.data != null) {
+          return const DashboardPage();
+        } else {
+          return const LoginPage();
+        }
+      },
     );
   }
 }
 
 // --- 1. LOGIN PAGE ---
-
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  bool _isLoading = false;
+  final AuthService _authService = AuthService();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // Background Blobs
           Positioned(
             top: -50,
             right: -50,
@@ -137,7 +132,6 @@ class LoginPage extends StatelessWidget {
             left: -50,
             child: _buildBlurBlob(250, kDeepGreen.withAlpha(51)),
           ),
-          
           Center(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -163,8 +157,6 @@ class LoginPage extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 60),
-                  
-                  // Glassmorphism Card imitation
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -193,12 +185,21 @@ class LoginPage extends StatelessWidget {
                         _buildButton(
                           text: "Continue with Google",
                           icon: Icons.login,
-                          onTap: () {
-                            Navigator.pushReplacement(
-                              context, 
-                              MaterialPageRoute(builder: (_) => const DashboardPage())
-                            );
+                          onTap: () async {
+                            if (_isLoading) return;
+                            setState(() => _isLoading = true);
+                            try {
+                              await _authService.signInWithGoogle();
+                            } catch (e) {
+                              setState(() => _isLoading = false);
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text('Failed to sign in: $e')),
+                              );
+                            }
                           },
+                          isLoading: _isLoading,
                         ),
                       ],
                     ),
@@ -220,17 +221,17 @@ class LoginPage extends StatelessWidget {
         color: color,
         shape: BoxShape.circle,
       ),
-      // Blur effect trick without BackdropFilter for simpler performance
       child: const DecoratedBox(
-        decoration: BoxDecoration(
-           // In actual device, standard blur works well
-        ),
+        decoration: BoxDecoration(),
       ),
-    ); // Note: In pure Flutter, BackdropFilter is used over content, or ImageFilter.blur. 
-       // For simplicity in this snippet, we use solid opacity circles which look nice too.
+    );
   }
 
-  Widget _buildButton({required String text, required IconData icon, required VoidCallback onTap}) {
+  Widget _buildButton(
+      {required String text,
+      required IconData icon,
+      required VoidCallback onTap,
+      bool isLoading = false}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -248,19 +249,29 @@ class LoginPage extends StatelessWidget {
             )
           ],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Text(
-              text,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        child: Center(
+          child: isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: Colors.white, size: 20),
+                    const SizedBox(width: 12),
+                    Text(
+                      text,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -268,7 +279,6 @@ class LoginPage extends StatelessWidget {
 }
 
 // --- 2. DASHBOARD ---
-
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -277,13 +287,46 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  // Simpan progress lokal sederhana
+  final AuthService _authService = AuthService();
+  final User? _user = FirebaseAuth.instance.currentUser;
+  late Future<List<String>> _vocabCategoriesFuture;
+  late Future<DocumentSnapshot> _grammarQuizFuture;
+
   final Set<String> completedCategories = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _vocabCategoriesFuture = _fetchVocabCategories();
+    _grammarQuizFuture = _fetchGrammarQuiz();
+  }
+
+  Future<List<String>> _fetchVocabCategories() async {
+    final snapshot = await FirebaseFirestore.instance.collection('vocab').get();
+    return snapshot.docs.map((doc) => doc.id).toList();
+  }
+
+  Future<DocumentSnapshot> _fetchGrammarQuiz() {
+    return FirebaseFirestore.instance.collection('grammar').doc('quiz1').get();
+  }
 
   void _markComplete(String category) {
     setState(() {
       completedCategories.add(category);
     });
+  }
+
+  IconData _getIconForCategory(String category) {
+    switch (category) {
+      case 'travel':
+        return Icons.card_travel;
+      case 'noun':
+        return Icons.lightbulb_outline;
+      case 'kitchen':
+        return Icons.kitchen;
+      default:
+        return Icons.menu_book;
+    }
   }
 
   @override
@@ -296,14 +339,24 @@ class _DashboardPageState extends State<DashboardPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Halo, Learner", style: TextStyle(color: kTextDark, fontSize: 20, fontWeight: FontWeight.bold)),
-            Text("Dashboard", style: TextStyle(color: Colors.grey[400], fontSize: 12, letterSpacing: 1.5)),
+            Text("Halo, ${_user?.displayName?.split(' ')[0] ?? 'Learner'}",
+                style: TextStyle(
+                    color: kTextDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold)),
+            Text("Dashboard",
+                style: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 12,
+                    letterSpacing: 1.5)),
           ],
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.grey),
-            onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginPage())),
+            onPressed: () async {
+              await _authService.signOut();
+            },
           )
         ],
       ),
@@ -312,29 +365,57 @@ class _DashboardPageState extends State<DashboardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Grammar Section
-            const Text("Grammar Mastery", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const Text("Grammar Mastery",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
-            _buildGrammarCard(context),
-            
+            FutureBuilder<DocumentSnapshot>(
+              future: _grammarQuizFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildShimmerGrammarCard();
+                }
+                if (snapshot.hasError ||
+                    !snapshot.hasData ||
+                    !snapshot.data!.exists) {
+                  return const SizedBox.shrink();
+                }
+                return _buildGrammarCard(context);
+              },
+            ),
             const SizedBox(height: 32),
-            
-            // Vocab Section
-            const Text("Vocabulary Sets", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const Text("Vocabulary Sets",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 1.1,
-              ),
-              itemCount: vocabData.keys.length,
-              itemBuilder: (context, index) {
-                String key = vocabData.keys.elementAt(index);
-                return _buildVocabCard(context, key, completedCategories.contains(key));
+            FutureBuilder<List<String>>(
+              future: _vocabCategoriesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildShimmerGrid();
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(
+                      child: Text('No vocabulary sets found.'));
+                }
+                final categories = snapshot.data!;
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 1.1,
+                  ),
+                  itemCount: categories.length,
+                  itemBuilder: (context, index) {
+                    String key = categories[index];
+                    return _buildVocabCard(
+                        context, key, completedCategories.contains(key));
+                  },
+                );
               },
             ),
           ],
@@ -343,10 +424,50 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _buildShimmerGrammarCard() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        height: 160,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerGrid() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 1.1,
+        ),
+        itemCount: 4,
+        itemBuilder: (context, index) => Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGrammarCard(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const GrammarQuizPage()));
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const GrammarQuizPage()));
       },
       child: Container(
         height: 160,
@@ -369,9 +490,14 @@ class _DashboardPageState extends State<DashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text("Daily Quiz", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                Text("Daily Quiz",
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold)),
                 SizedBox(height: 8),
-                Text("10 Pertanyaan Cepat", style: TextStyle(color: Colors.white70)),
+                Text("10 Pertanyaan Cepat",
+                    style: TextStyle(color: Colors.white70)),
               ],
             ),
             Positioned(
@@ -397,6 +523,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildVocabCard(BuildContext context, String title, bool isCompleted) {
+    final categoryIcon = _getIconForCategory(title);
     return GestureDetector(
       onTap: () async {
         final result = await Navigator.push(
@@ -421,37 +548,57 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: kSoftCream,
-                    shape: BoxShape.circle,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              Positioned(
+                bottom: -20,
+                right: -20,
+                child: Icon(
+                  categoryIcon,
+                  size: 100,
+                  color: kSoftCream.withAlpha(200),
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: kSoftCream,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(categoryIcon, size: 18, color: kDeepGreen),
+                      ),
+                      if (isCompleted)
+                        const Icon(Icons.check_circle,
+                            size: 18, color: kSageGreen),
+                    ],
                   ),
-                  child: Icon(Icons.menu_book, size: 18, color: kDeepGreen),
-                ),
-                if (isCompleted)
-                  const Icon(Icons.check_circle, size: 18, color: kSageGreen),
-              ],
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title[0].toUpperCase() + title.substring(1),
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 4),
-                Text("10 Words", style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-              ],
-            ),
-          ],
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title[0].toUpperCase() + title.substring(1),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Text("10 Words",
+                          style:
+                              TextStyle(color: Colors.grey[400], fontSize: 12)),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -459,24 +606,124 @@ class _DashboardPageState extends State<DashboardPage> {
 }
 
 // --- 3. VOCAB PLAYER ---
-
 class VocabPlayerPage extends StatefulWidget {
   final String category;
   const VocabPlayerPage({super.key, required this.category});
-
   @override
   State<VocabPlayerPage> createState() => _VocabPlayerPageState();
 }
 
 class _VocabPlayerPageState extends State<VocabPlayerPage> {
-  late List<Map<String, String>> words;
-  late PageController _pageController;
-  int currentIndex = 0;
-
+  late Future<List<Map<String, dynamic>>> _wordsFuture;
   @override
   void initState() {
     super.initState();
-    words = vocabData[widget.category] ?? [];
+    _wordsFuture = _fetchWords(widget.category);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchWords(String category) async {
+    final docSnapshot = await FirebaseFirestore.instance
+        .collection('vocab')
+        .doc(category)
+        .get();
+    if (docSnapshot.exists) {
+      final data = docSnapshot.data();
+      if (data != null && data['words'] is List) {
+        return List<Map<String, dynamic>>.from(data['words']);
+      }
+    }
+    throw Exception('Words not found for this category.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kSoftCream,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.grey),
+          onPressed: () => Navigator.pop(context),
+        ),
+        centerTitle: true,
+        title: Text(widget.category.toUpperCase(),
+            style: const TextStyle(fontSize: 12, letterSpacing: 2, color: Colors.grey)),
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _wordsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return _buildPlayerShimmer();
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text("Error: ${snapshot.error}"));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text("No words found."));
+          }
+          return VocabPlayerView(words: snapshot.data!);
+        },
+      ),
+    );
+  }
+
+  Widget _buildPlayerShimmer() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: Container(
+                width: 300,
+                height: 400,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(32),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Container(
+                    width: 50,
+                    height: 50,
+                    decoration: const BoxDecoration(
+                        color: Colors.white, shape: BoxShape.circle)),
+                Container(height: 6, width: 100, color: Colors.white),
+                Container(
+                    width: 50,
+                    height: 50,
+                    decoration: const BoxDecoration(
+                        color: Colors.white, shape: BoxShape.circle)),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+class VocabPlayerView extends StatefulWidget {
+  final List<Map<String, dynamic>> words;
+  const VocabPlayerView({super.key, required this.words});
+  @override
+  State<VocabPlayerView> createState() => _VocabPlayerViewState();
+}
+
+class _VocabPlayerViewState extends State<VocabPlayerView> {
+  late PageController _pageController;
+  int currentIndex = 0;
+  @override
+  void initState() {
+    super.initState();
     _pageController = PageController();
   }
 
@@ -487,13 +734,12 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
   }
 
   void _nextCard() {
-    if (currentIndex < words.length - 1) {
+    if (currentIndex < widget.words.length - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
       );
     } else {
-      // Selesai
       Navigator.pop(context, true);
     }
   }
@@ -509,80 +755,67 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: kSoftCream,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.grey),
-          onPressed: () => Navigator.pop(context),
-        ),
-        centerTitle: true,
-        title: Text(widget.category.toUpperCase(), style: const TextStyle(fontSize: 12, letterSpacing: 2, color: Colors.grey)),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 20),
-            child: Center(child: Text("${currentIndex + 1}/${words.length}", style: const TextStyle(fontFamily: 'Courier'))),
-          )
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: words.length,
-              onPageChanged: (index) {
-                setState(() {
-                  currentIndex = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                return Center(
-                  child: FlippableCard(word: words[index]),
-                );
-              },
-            ),
+    return Column(
+      children: [
+        Expanded(
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: widget.words.length,
+            onPageChanged: (index) {
+              setState(() {
+                currentIndex = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              return Center(
+                child: FlippableCard(
+                    word: Map<String, String>.from(widget.words[index])),
+              );
+            },
           ),
-          
-          // Controls
-          Padding(
-            padding: const EdgeInsets.all(32.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                IconButton(
-                  onPressed: currentIndex == 0 ? null : _prevCard,
-                  icon: const Icon(Icons.arrow_back),
-                  style: IconButton.styleFrom(
+        ),
+        Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                onPressed: currentIndex == 0 ? null : _prevCard,
+                icon: const Icon(Icons.arrow_back),
+                style: IconButton.styleFrom(
                     backgroundColor: Colors.white,
-                    padding: const EdgeInsets.all(16),
-                  ),
+                    padding: const EdgeInsets.all(16)),
+              ),
+              Container(
+                height: 6,
+                width: 100,
+                decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(3)),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: (currentIndex + 1) / widget.words.length,
+                  child: Container(
+                      decoration: BoxDecoration(
+                          color: kSageGreen,
+                          borderRadius: BorderRadius.circular(3))),
                 ),
-                Container(
-                  height: 6, 
-                  width: 100, 
-                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(3)),
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: (currentIndex + 1) / words.length,
-                    child: Container(decoration: BoxDecoration(color: kSageGreen, borderRadius: BorderRadius.circular(3))),
-                  ),
-                ),
-                IconButton(
-                  onPressed: _nextCard,
-                  icon: Icon(currentIndex == words.length - 1 ? Icons.check : Icons.arrow_forward, color: Colors.white),
-                  style: IconButton.styleFrom(
+              ),
+              IconButton(
+                onPressed: _nextCard,
+                icon: Icon(
+                    currentIndex == widget.words.length - 1
+                        ? Icons.check
+                        : Icons.arrow_forward,
+                    color: Colors.white),
+                style: IconButton.styleFrom(
                     backgroundColor: kDeepGreen,
-                    padding: const EdgeInsets.all(16),
-                  ),
-                ),
-              ],
-            ),
-          )
-        ],
-      ),
+                    padding: const EdgeInsets.all(16)),
+              ),
+            ],
+          ),
+        )
+      ],
     );
   }
 }
@@ -590,16 +823,15 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
 class FlippableCard extends StatefulWidget {
   final Map<String, String> word;
   const FlippableCard({super.key, required this.word});
-
   @override
   State<FlippableCard> createState() => _FlippableCardState();
 }
 
-class _FlippableCardState extends State<FlippableCard> with SingleTickerProviderStateMixin {
+class _FlippableCardState extends State<FlippableCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
   bool showBack = false;
-
   @override
   void initState() {
     super.initState();
@@ -619,8 +851,6 @@ class _FlippableCardState extends State<FlippableCard> with SingleTickerProvider
   }
 
   void _flipCard() {
-    // When the card is flipped, reset the state of the other card if it's flipped.
-    // This is handled by creating a new FlippableCard for each page.
     if (showBack) {
       _controller.reverse();
     } else {
@@ -640,19 +870,18 @@ class _FlippableCardState extends State<FlippableCard> with SingleTickerProvider
         builder: (context, child) {
           final angle = _animation.value * pi;
           final isBack = angle >= (pi / 2);
-          
           return Transform(
             alignment: Alignment.center,
             transform: Matrix4.identity()
               ..setEntry(3, 2, 0.001) // perspective
               ..rotateY(angle),
-            child: isBack 
-              ? Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()..rotateY(pi),
-                  child: _buildCardBack(widget.word),
-                )
-              : _buildCardFront(widget.word),
+            child: isBack
+                ? Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..rotateY(pi),
+                    child: _buildCardBack(widget.word),
+                  )
+                : _buildCardFront(widget.word),
           );
         },
       ),
@@ -667,17 +896,30 @@ class _FlippableCardState extends State<FlippableCard> with SingleTickerProvider
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
-          BoxShadow(color: Colors.black.withAlpha(13), blurRadius: 20, offset: const Offset(0, 10))
+          BoxShadow(
+              color: Colors.black.withAlpha(13),
+              blurRadius: 20,
+              offset: const Offset(0, 10))
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(width: 60, height: 4, decoration: BoxDecoration(color: kSageGreen.withAlpha(128), borderRadius: BorderRadius.circular(2))),
+          Container(
+              width: 60,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: kSageGreen.withAlpha(128),
+                  borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 40),
-          Text(word['word']!, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: kTextDark)),
+          Text(word['word']!,
+              style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: kTextDark)),
           const SizedBox(height: 20),
-          Text("Tap to reveal", style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+          Text("Tap to reveal",
+              style: TextStyle(color: Colors.grey[400], fontSize: 12)),
         ],
       ),
     );
@@ -692,26 +934,38 @@ class _FlippableCardState extends State<FlippableCard> with SingleTickerProvider
         color: kDeepGreen,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
-          BoxShadow(color: kDeepGreen.withAlpha(77), blurRadius: 20, offset: const Offset(0, 10))
+          BoxShadow(
+              color: kDeepGreen.withAlpha(77),
+              blurRadius: 20,
+              offset: const Offset(0, 10))
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(word['word']!, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: kSoftCream)),
+          Text(word['word']!,
+              style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: kSoftCream)),
           const SizedBox(height: 8),
-          Text(word['pronounce']!, style: TextStyle(fontSize: 14, color: kSoftCream.withAlpha(153), fontFamily: 'Courier')),
+          Text(word['pronounce']!,
+              style: TextStyle(
+                  fontSize: 14,
+                  color: kSoftCream.withAlpha(153),
+                  fontFamily: 'Courier')),
           const SizedBox(height: 32),
-          Text('"${word['desc']!}"', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: Colors.white, height: 1.5)),
+          Text('"${word['desc']!}"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 16, color: Colors.white, height: 1.5)),
         ],
       ),
     );
   }
 }
 
-
 // --- 4. GRAMMAR QUIZ ---
-
 class GrammarQuizPage extends StatefulWidget {
   const GrammarQuizPage({super.key});
 
@@ -720,6 +974,99 @@ class GrammarQuizPage extends StatefulWidget {
 }
 
 class _GrammarQuizPageState extends State<GrammarQuizPage> {
+  late Future<List<Map<String, dynamic>>> _questionsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _questionsFuture = _fetchQuestions();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchQuestions() async {
+    final docSnapshot = await FirebaseFirestore.instance
+        .collection('grammar')
+        .doc('quiz1')
+        .get();
+    if (docSnapshot.exists) {
+      final data = docSnapshot.data();
+      if (data != null && data['questions'] is List) {
+        return List<Map<String, dynamic>>.from(data['questions']);
+      }
+    }
+    throw Exception('Questions not found.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+            icon: const Icon(Icons.close, color: Colors.grey),
+            onPressed: () => Navigator.pop(context)),
+        title: const Text("Grammar Quiz",
+            style: TextStyle(color: Colors.grey, fontSize: 14)),
+        centerTitle: true,
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _questionsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return _buildQuizShimmer();
+          }
+          if (snapshot.hasError) {
+            return Center(
+                child: Text("Error loading quiz: ${snapshot.error}"));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text("No questions found."));
+          }
+          return GrammarQuizView(questions: snapshot.data!);
+        },
+      ),
+    );
+  }
+
+  Widget _buildQuizShimmer() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(width: double.infinity, height: 72.0, color: Colors.white),
+            const SizedBox(height: 40),
+            ...List.generate(
+                4,
+                (index) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Container(
+                          width: double.infinity,
+                          height: 80.0,
+                          decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16))),
+                    )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class GrammarQuizView extends StatefulWidget {
+  final List<Map<String, dynamic>> questions;
+  const GrammarQuizView({super.key, required this.questions});
+
+  @override
+  State<GrammarQuizView> createState() => _GrammarQuizViewState();
+}
+
+class _GrammarQuizViewState extends State<GrammarQuizView> {
   int currentQ = 0;
   int score = 0;
   int? selectedOption;
@@ -727,16 +1074,14 @@ class _GrammarQuizPageState extends State<GrammarQuizPage> {
 
   void _answer(int index) {
     if (selectedOption != null) return;
-    
     setState(() {
       selectedOption = index;
-      if (index == grammarQuestions[currentQ]['correctIndex']) {
+      if (index == widget.questions[currentQ]['correctIndex']) {
         score++;
       }
     });
-
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (currentQ < grammarQuestions.length - 1) {
+      if (currentQ < widget.questions.length - 1) {
         setState(() {
           currentQ++;
           selectedOption = null;
@@ -767,9 +1112,13 @@ class _GrammarQuizPageState extends State<GrammarQuizPage> {
               children: [
                 const Icon(Icons.psychology, size: 64, color: kSageGreen),
                 const SizedBox(height: 24),
-                const Text("Quiz Complete!", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const Text("Quiz Complete!",
+                    style:
+                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Text("$score / ${grammarQuestions.length}", style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w300)),
+                Text("$score / ${widget.questions.length}",
+                    style: const TextStyle(
+                        fontSize: 48, fontWeight: FontWeight.w300)),
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
@@ -778,7 +1127,8 @@ class _GrammarQuizPageState extends State<GrammarQuizPage> {
                       backgroundColor: kDeepGreen,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
                     ),
                     onPressed: () => Navigator.pop(context),
                     child: const Text("Back to Dashboard"),
@@ -790,99 +1140,91 @@ class _GrammarQuizPageState extends State<GrammarQuizPage> {
         ),
       );
     }
-
-    final qData = grammarQuestions[currentQ];
-    final options = qData['options'] as List<Map<String, String>>;
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () => Navigator.pop(context)),
-        title: Text("Q${currentQ + 1}", style: const TextStyle(color: Colors.grey, fontSize: 14)),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          // Progress Bar
-          LinearProgressIndicator(
-            value: (currentQ + 1) / grammarQuestions.length,
-            backgroundColor: kBackground,
-            valueColor: const AlwaysStoppedAnimation<Color>(kSageGreen),
-          ),
-          
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    qData['question'],
-                    style: const TextStyle(fontSize: 24, height: 1.5, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 40),
-                  
-                  ...List.generate(options.length, (index) {
-                    final opt = options[index];
-                    bool isSelected = selectedOption == index;
-                    bool isCorrect = index == qData['correctIndex'];
-                    bool showResult = selectedOption != null;
-                    
-                    Color bgColor = kBackground;
-                    Color borderColor = Colors.transparent;
-                    Color textColor = kTextDark;
-
-                    if (showResult) {
-                      if (isCorrect) {
-                        bgColor = const Color(0xFFD8E6D6); // Greenish
-                        borderColor = kSageGreen;
-                        textColor = Colors.black;
-                      } else if (isSelected) {
-                        bgColor = Colors.red.shade50;
-                        borderColor = Colors.red.shade200;
-                        textColor = Colors.red.shade800;
-                      } else {
-                        textColor = Colors.grey.shade400;
-                      }
+    final qData = widget.questions[currentQ];
+    final options = qData['options'] as List<Map<String, dynamic>>;
+    return Column(
+      children: [
+        LinearProgressIndicator(
+          value: (currentQ + 1) / widget.questions.length,
+          backgroundColor: kBackground,
+          valueColor: const AlwaysStoppedAnimation<Color>(kSageGreen),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  qData['question'],
+                  style: const TextStyle(
+                      fontSize: 24, height: 1.5, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 40),
+                ...List.generate(options.length, (index) {
+                  final opt = options[index];
+                  bool isSelected = selectedOption == index;
+                  bool isCorrect = index == qData['correctIndex'];
+                  bool showResult = selectedOption != null;
+                  Color bgColor = kBackground;
+                  Color borderColor = Colors.transparent;
+                  Color textColor = kTextDark;
+                  if (showResult) {
+                    if (isCorrect) {
+                      bgColor = const Color(0xFFD8E6D6);
+                      borderColor = kSageGreen;
+                      textColor = Colors.black;
+                    } else if (isSelected) {
+                      bgColor = Colors.red.shade50;
+                      borderColor = Colors.red.shade200;
+                      textColor = Colors.red.shade800;
+                    } else {
+                      textColor = Colors.grey.shade400;
                     }
-
-                    return GestureDetector(
-                      onTap: () => _answer(index),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: bgColor,
-                          border: Border.all(color: borderColor, width: 2),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(opt['text']!, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textColor)),
-                                  if (!showResult || isSelected || isCorrect)
-                                    Text(opt['desc']!, style: TextStyle(fontSize: 12, color: textColor.withAlpha(179), height: 1.5)),
-                                ],
-                              ),
-                            ),
-                            if (showResult && isCorrect)
-                              const Icon(Icons.check_circle, color: kSageGreen),
-                          ],
-                        ),
+                  }
+                  return GestureDetector(
+                    onTap: () => _answer(index),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        border: Border.all(color: borderColor, width: 2),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                    );
-                  }),
-                ],
-              ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(opt['text']!,
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: textColor)),
+                                if (!showResult || isSelected || isCorrect)
+                                  Text(opt['desc']!,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: textColor.withAlpha(179),
+                                          height: 1.5)),
+                              ],
+                            ),
+                          ),
+                          if (showResult && isCorrect)
+                            const Icon(Icons.check_circle,
+                                color: kSageGreen),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
             ),
-          )
-        ],
-      ),
+          ),
+        )
+      ],
     );
   }
 }
