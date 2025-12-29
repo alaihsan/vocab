@@ -1,4 +1,6 @@
 import 'dart:math';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:vocab/firebase_options.dart';
 import 'package:vocab/data/sample_data.dart';
+import 'package:vocab/services/database_service.dart';
 
 // --- PALETTE ---
 // Warna Zen
@@ -133,6 +136,7 @@ class StorageService {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseService.initialize();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -179,6 +183,10 @@ class AuthWrapper extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
+        if (snapshot.hasError) {
+          // Handle error gracefully - show login page instead of red error screen
+          return const LoginPage();
+        }
         if (snapshot.hasData && snapshot.data != null) {
           return const DashboardPage();
         } else {
@@ -195,6 +203,111 @@ class LoginPage extends StatefulWidget {
 
   @override
   State<LoginPage> createState() => _LoginPageState();
+}
+
+// --- ANIMATED LOGIN BACKGROUND ---
+class AnimatedLoginBackground extends StatefulWidget {
+  const AnimatedLoginBackground({super.key});
+
+  @override
+  State<AnimatedLoginBackground> createState() => _AnimatedLoginBackgroundState();
+}
+
+class _AnimatedLoginBackgroundState extends State<AnimatedLoginBackground>
+    with TickerProviderStateMixin {
+  late AnimationController _gradientController;
+  late AnimationController _floatController;
+  late List<AnimationController> _particleControllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _gradientController = AnimationController(
+      duration: const Duration(seconds: 5),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _floatController = AnimationController(
+      duration: const Duration(seconds: 8),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _particleControllers = List.generate(
+      8,
+      (index) => AnimationController(
+        duration: Duration(seconds: 6 + (index * 1)),
+        vsync: this,
+      )..repeat(reverse: true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _gradientController.dispose();
+    _floatController.dispose();
+    for (var controller in _particleControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Animated gradient background
+        AnimatedBuilder(
+          animation: _gradientController,
+          builder: (context, child) {
+            return Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    kSageGreen.withValues(
+                      alpha: 0.3 + (_gradientController.value * 0.2),
+                    ),
+                    kBackground,
+                    kDeepGreen.withValues(
+                      alpha: 0.2 + (_gradientController.value * 0.15),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+        // Floating particles
+        ..._particleControllers.asMap().entries.map((e) {
+          int index = e.key;
+          AnimationController controller = e.value;
+
+          return AnimatedBuilder(
+            animation: controller,
+            builder: (context, child) {
+              return Positioned(
+                left: MediaQuery.of(context).size.width * (0.1 + (index * 0.12)),
+                top: MediaQuery.of(context).size.height * (0.2 + (controller.value * 0.4)),
+                child: Container(
+                  width: 15 + (index * 5),
+                  height: 15 + (index * 5),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: [
+                      kSageGreen,
+                      kDeepGreen,
+                      Colors.cyan,
+                    ][index % 3].withAlpha(51),
+                  ),
+                ),
+              );
+            },
+          );
+        }),
+      ],
+    );
+  }
 }
 
 class _LoginPageState extends State<LoginPage> {
@@ -237,9 +350,11 @@ class _LoginPageState extends State<LoginPage> {
       } else if (e.toString().contains('invalid-email')) {
         errorMessage = 'Invalid email format';
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     }
   }
 
@@ -248,16 +363,7 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: Stack(
         children: [
-          Positioned(
-            top: -50,
-            right: -50,
-            child: _buildBlurBlob(200, kSageGreen.withValues(alpha: 0.3)),
-          ),
-          Positioned(
-            bottom: -50,
-            left: -50,
-            child: _buildBlurBlob(250, kDeepGreen.withValues(alpha: 0.2)),
-          ),
+          const AnimatedLoginBackground(),
           Center(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -429,20 +535,6 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildBlurBlob(double size, Color color) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
-      child: const DecoratedBox(
-        decoration: BoxDecoration(),
-      ),
-    );
-  }
-
   Widget _buildButton(
       {required String text,
       required IconData icon,
@@ -534,8 +626,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<List<String>> _fetchVocabCategories() async {
-    // Get categories from sample data
-    return sampleVocab.keys.toList();
+    // Get categories from SQLite database
+    final dbService = DatabaseService();
+    return dbService.getCategories();
   }
 
   Future<Map<String, dynamic>> _fetchGrammarQuiz() {
@@ -649,6 +742,113 @@ class _DashboardPageState extends State<DashboardPage> {
                 );
               },
             ),
+            const SizedBox(height: 32),
+            const Text("Practice Exercises",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildPracticeCard(
+                    context,
+                    'Meaning Match',
+                    Icons.checklist,
+                    Colors.orange,
+                    () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const MeaningMatchPage()),
+                      );
+                      if (result is Map &&
+                          result['completed'] == true &&
+                          mounted) {
+                        setState(() {
+                          completedQuizzes++;
+                        });
+                        _storageService.saveCompletedQuizzes(completedQuizzes);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildPracticeCard(
+                    context,
+                    'Synonym Match',
+                    Icons.link,
+                    Colors.purple,
+                    () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const SynonymMatchPage()),
+                      );
+                      if (result is Map &&
+                          result['completed'] == true &&
+                          mounted) {
+                        setState(() {
+                          completedQuizzes++;
+                        });
+                        _storageService.saveCompletedQuizzes(completedQuizzes);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPracticeCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withAlpha(25),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withAlpha(77), width: 1),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withAlpha(51),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: kTextDark,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '10 Questions',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[500],
+              ),
+            ),
           ],
         ),
       ),
@@ -699,12 +899,13 @@ class _DashboardPageState extends State<DashboardPage> {
       onTap: () async {
         final result = await Navigator.push(context,
             MaterialPageRoute(builder: (_) => const GrammarQuizPage()));
-        if (result == true && mounted) {
+        if (result is Map && result['completed'] == true && mounted) {
           setState(() {
             completedQuizzes++;
           });
           _storageService.saveCompletedQuizzes(completedQuizzes);
-          _storageService.addHistoryEntry('quiz', 'Grammar Quiz', '$completedQuizzes');
+          final scorePercent = result['score'] ?? 0;
+          _storageService.addHistoryEntry('quiz', 'Grammar Quiz', '$scorePercent%');
         }
       },
       child: Container(
@@ -918,6 +1119,11 @@ class _DashboardPageState extends State<DashboardPage> {
               const SizedBox(height: 8),
               TextField(
                 controller: nameController,
+                onChanged: (value) {
+                  // Auto-save as user types
+                  _storageService.saveUserName(value);
+                  setState(() => _userName = value);
+                },
                 decoration: InputDecoration(
                   hintText: 'Masukkan nama anda',
                   filled: true,
@@ -1032,33 +1238,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const SizedBox(height: 16),
 
-              // Save & Logout Buttons
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kDeepGreen,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () async {
-                    setState(() => _userName = nameController.text);
-                    await _storageService.saveUserName(nameController.text);
-                    if (!mounted) return;
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Nama berhasil diperbarui')),
-                    );
-                  },
-                  child: const Text(
-                    'Simpan Perubahan',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
+              // Logout Button
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
@@ -1101,6 +1281,119 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
+// --- ANIMATED BUBBLE BACKGROUNDS ---
+class AnimatedBubblesBackground extends StatefulWidget {
+  final List<Color> colors;
+  final bool isQuiz;
+  const AnimatedBubblesBackground({
+    super.key,
+    required this.colors,
+    this.isQuiz = false,
+  });
+
+  @override
+  State<AnimatedBubblesBackground> createState() =>
+      _AnimatedBubblesBackgroundState();
+}
+
+class _AnimatedBubblesBackgroundState extends State<AnimatedBubblesBackground>
+    with TickerProviderStateMixin {
+  late List<AnimationController> _controllers;
+  late List<Animation<Offset>> _animations;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = List.generate(
+      widget.isQuiz ? 6 : 5,
+      (index) => AnimationController(
+        duration: Duration(seconds: 8 + (index * 2)),
+        vsync: this,
+      )..repeat(reverse: true),
+    );
+
+    _animations = _controllers
+        .asMap()
+        .entries
+        .map((e) {
+          int index = e.key;
+          final startOffset = Offset(
+            (index * 0.25) - 0.5,
+            index.isEven ? -1.0 : 1.0,
+          );
+          final endOffset = Offset(
+            startOffset.dx + (index.isEven ? 0.3 : -0.3),
+            startOffset.dy * -1,
+          );
+          return Tween<Offset>(begin: startOffset, end: endOffset).animate(
+            CurvedAnimation(parent: e.value, curve: Curves.easeInOut),
+          );
+        })
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Background gradient
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                kBackground,
+                kSoftCream.withAlpha(153),
+              ],
+            ),
+          ),
+        ),
+        // Animated bubbles
+        ..._animations.asMap().entries.map((e) {
+          int index = e.key;
+          final animation = e.value;
+          final color = widget.colors[index % widget.colors.length];
+          final size = 80.0 + (index * 20);
+
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (context, child) {
+              return Positioned(
+                left: (MediaQuery.of(context).size.width * (0.5 + animation.value.dx)),
+                top: (MediaQuery.of(context).size.height * (0.5 + animation.value.dy)),
+                child: Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color.withAlpha(31),
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withAlpha(51),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        }),
+      ],
+    );
+  }
+}
+
 // --- 3. VOCAB PLAYER ---
 class VocabPlayerPage extends StatefulWidget {
   final String category;
@@ -1118,9 +1411,15 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchWords(String category) async {
-    final words = sampleVocab[category];
-    if (words != null) {
-      return words.map((w) => Map<String, dynamic>.from(w)).toList();
+    final dbService = DatabaseService();
+    final words = await dbService.getVocabularyByCategory(category);
+    if (words.isNotEmpty) {
+      // Map database results to match the expected format
+      return words.map((w) => {
+        'word': w['word'],
+        'pronounce': w['pronounce'],
+        'desc': w['description'],
+      }).toList();
     }
     throw Exception('Words not found for this category.');
   }
@@ -1128,32 +1427,41 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kSoftCream,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.grey),
-          onPressed: () => Navigator.pop(context),
-        ),
-        centerTitle: true,
-        title: Text(widget.category.toUpperCase(),
-            style: const TextStyle(fontSize: 12, letterSpacing: 2, color: Colors.grey)),
-      ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _wordsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildPlayerShimmer();
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("No words found."));
-          }
-          return VocabPlayerView(words: snapshot.data!);
-        },
+      body: Stack(
+        children: [
+          AnimatedBubblesBackground(
+            colors: [kSageGreen, kDeepGreen, kSoftCream, Colors.cyan, Colors.teal],
+          ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios, color: Colors.grey),
+                onPressed: () => Navigator.pop(context),
+              ),
+              centerTitle: true,
+              title: Text(widget.category.toUpperCase(),
+                  style: const TextStyle(fontSize: 12, letterSpacing: 2, color: Colors.grey)),
+            ),
+            body: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _wordsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildPlayerShimmer();
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text("Error: ${snapshot.error}"));
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(child: Text("No words found."));
+                }
+                return VocabPlayerView(words: snapshot.data!);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1210,6 +1518,33 @@ class VocabPlayerView extends StatefulWidget {
 
 class _VocabPlayerViewState extends State<VocabPlayerView> {
   int currentIndex = 0;
+  late ConfettiController _confettiController;
+  late AudioPlayer _audioPlayer;
+
+  @override
+  void initState() {
+    super.initState();
+    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
+    _audioPlayer = AudioPlayer();
+  }
+
+  @override
+  void dispose() {
+    _confettiController.dispose();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playSuccessSound() async {
+    try {
+      // Celebratory chime sound
+      await _audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2960/2960-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail if sound not found
+    }
+  }
 
   void _nextCard() {
     if (currentIndex < widget.words.length - 1) {
@@ -1217,7 +1552,13 @@ class _VocabPlayerViewState extends State<VocabPlayerView> {
         currentIndex++;
       });
     } else {
-      Navigator.pop(context, true);
+      _confettiController.play();
+      _playSuccessSound();
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+      });
     }
   }
 
@@ -1231,18 +1572,20 @@ class _VocabPlayerViewState extends State<VocabPlayerView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        Expanded(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 500),
-            transitionBuilder: (Widget child, Animation<double> animation) {
-              return ScaleTransition(
-                scale: animation,
-                child: FadeTransition(
-                  opacity: animation,
-                  child: child,
-                ),
+        Column(
+          children: [
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 500),
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    ),
               );
             },
             child: Center(
@@ -1294,6 +1637,28 @@ class _VocabPlayerViewState extends State<VocabPlayerView> {
             ],
           ),
         )
+        ],
+      ),
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConfettiWidget(
+            confettiController: _confettiController,
+            blastDirection: pi / 2,
+            maxBlastForce: 36,
+            minBlastForce: 8,
+            emissionFrequency: 0.05,
+            numberOfParticles: 50,
+            gravity: 0.3,
+            shouldLoop: false,
+            colors: const [
+              kSageGreen,
+              kDeepGreen,
+              Colors.cyan,
+              Colors.teal,
+              Colors.amber,
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1462,39 +1827,51 @@ class _GrammarQuizPageState extends State<GrammarQuizPage> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchQuestions() async {
-    final questions = sampleGrammarQuiz['questions'] as List<dynamic>;
-    return questions.map((q) => Map<String, dynamic>.from(q as Map)).toList();
+    final allQuestions = sampleGrammarQuiz['questions'] as List<dynamic>;
+    final shuffled = [...allQuestions]..shuffle(Random());
+    final randomTen = shuffled.take(10).toList();
+    return randomTen.map((q) => Map<String, dynamic>.from(q as Map)).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-            icon: const Icon(Icons.close, color: Colors.grey),
-            onPressed: () => Navigator.pop(context)),
-        title: const Text("Grammar Quiz",
-            style: TextStyle(color: Colors.grey, fontSize: 14)),
-        centerTitle: true,
-      ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _questionsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildQuizShimmer();
-          }
-          if (snapshot.hasError) {
-            return Center(
-                child: Text("Error loading quiz: ${snapshot.error}"));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("No questions found."));
-          }
-          return GrammarQuizView(questions: snapshot.data!);
-        },
+      body: Stack(
+        children: [
+          AnimatedBubblesBackground(
+            colors: [kDeepGreen, kSageGreen, Colors.amber, Colors.orange, Colors.lime],
+            isQuiz: true,
+          ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              backgroundColor: Colors.white.withValues(alpha: 0.9),
+              elevation: 0,
+              leading: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  onPressed: () => Navigator.pop(context)),
+              title: const Text("Grammar Quiz",
+                  style: TextStyle(color: Colors.grey, fontSize: 14)),
+              centerTitle: true,
+            ),
+            body: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _questionsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildQuizShimmer();
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                      child: Text("Error loading quiz: ${snapshot.error}"));
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(child: Text("No questions found."));
+                }
+                return GrammarQuizView(questions: snapshot.data!);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1541,15 +1918,62 @@ class _GrammarQuizViewState extends State<GrammarQuizView> {
   int score = 0;
   int? selectedOption;
   bool isFinished = false;
+  late AudioPlayer _audioPlayer;
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playErrorSound() async {
+    try {
+      // Error buzzer sound
+      await _audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2956/2956-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  Future<void> _playCorrectSound() async {
+    try {
+      // Cheerful success sound
+      await _audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2960/2960-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  void _triggerWrongFeedback() {
+    HapticFeedback.vibrate();
+    _playErrorSound();
+  }
 
   void _answer(int index) {
     if (selectedOption != null) return;
+    
+    final isCorrect = index == widget.questions[currentQ]['correctIndex'];
+    
     setState(() {
       selectedOption = index;
-      if (index == widget.questions[currentQ]['correctIndex']) {
+      if (isCorrect) {
         score++;
+        _playCorrectSound();
+      } else {
+        _triggerWrongFeedback();
       }
     });
+    
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (currentQ < widget.questions.length - 1) {
         setState(() {
@@ -1567,9 +1991,16 @@ class _GrammarQuizViewState extends State<GrammarQuizView> {
   @override
   Widget build(BuildContext context) {
     if (isFinished) {
-      return Scaffold(
-        body: Center(
-          child: Container(
+      return Stack(
+        children: [
+          AnimatedBubblesBackground(
+            colors: [kDeepGreen, kSageGreen, Colors.amber, Colors.orange, Colors.lime],
+            isQuiz: true,
+          ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Center(
+              child: Container(
             margin: const EdgeInsets.all(32),
             padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
@@ -1600,14 +2031,19 @@ class _GrammarQuizViewState extends State<GrammarQuizView> {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
-                    onPressed: () => Navigator.pop(context, true),
+                    onPressed: () {
+                      final scorePercent = ((score / widget.questions.length) * 100).toInt();
+                      Navigator.pop(context, {'completed': true, 'score': scorePercent});
+                    },
                     child: const Text("Back to Dashboard"),
                   ),
                 )
               ],
             ),
           ),
-        ),
+            ),
+          ),
+        ],
       );
     }
     final qData = widget.questions[currentQ];
@@ -1695,6 +2131,742 @@ class _GrammarQuizViewState extends State<GrammarQuizView> {
           ),
         )
       ],
+    );
+  }
+}
+
+// --- 4. MEANING MATCH PRACTICE ---
+class MeaningMatchPage extends StatefulWidget {
+  const MeaningMatchPage({super.key});
+
+  @override
+  State<MeaningMatchPage> createState() => _MeaningMatchPageState();
+}
+
+class _MeaningMatchPageState extends State<MeaningMatchPage> {
+  final StorageService _storageService = StorageService();
+  late Future<List<Map<String, dynamic>>> _questionsFuture;
+  late final AudioPlayer _audioPlayer;
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+    _questionsFuture = _fetchQuestions();
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchQuestions() async {
+    final allQuestions = sampleMeaningMatch['questions'] as List<dynamic>;
+    final shuffled = [...allQuestions]..shuffle(Random());
+    final randomTen = shuffled.take(10).toList();
+    return randomTen.map((q) => Map<String, dynamic>.from(q as Map)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _questionsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Meaning Match')),
+            body: Center(child: Text('Error: ${snapshot.error}')),
+          );
+        }
+        final questions = snapshot.data ?? [];
+        return MeaningMatchView(
+          questions: questions,
+          audioPlayer: _audioPlayer,
+          storageService: _storageService,
+        );
+      },
+    );
+  }
+}
+
+class MeaningMatchView extends StatefulWidget {
+  final List<Map<String, dynamic>> questions;
+  final AudioPlayer audioPlayer;
+  final StorageService storageService;
+
+  const MeaningMatchView({
+    super.key,
+    required this.questions,
+    required this.audioPlayer,
+    required this.storageService,
+  });
+
+  @override
+  State<MeaningMatchView> createState() => _MeaningMatchViewState();
+}
+
+class _MeaningMatchViewState extends State<MeaningMatchView> {
+  int currentQ = 0;
+  int score = 0;
+  int? selectedOption;
+  bool isFinished = false;
+
+  Future<void> _playCorrectSound() async {
+    try {
+      await widget.audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  Future<void> _playErrorSound() async {
+    try {
+      await widget.audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2956/2956-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  void _triggerWrongFeedback() {
+    HapticFeedback.vibrate();
+    _playErrorSound();
+  }
+
+  void _answer(int index) {
+    if (selectedOption != null) return;
+
+    final isCorrect = index == widget.questions[currentQ]['correctIndex'];
+
+    setState(() {
+      selectedOption = index;
+      if (isCorrect) {
+        score++;
+        _playCorrectSound();
+      } else {
+        _triggerWrongFeedback();
+      }
+    });
+
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      if (currentQ < widget.questions.length - 1) {
+        setState(() {
+          currentQ++;
+          selectedOption = null;
+        });
+      } else {
+        setState(() {
+          isFinished = true;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isFinished) {
+      final scorePercent = ((score / widget.questions.length) * 100).toStringAsFixed(0);
+      widget.storageService.addHistoryEntry('practice', 'Meaning Match', '$scorePercent%');
+      return Scaffold(
+        body: Stack(
+          children: [
+            AnimatedBubblesBackground(
+              colors: [kSageGreen, kDeepGreen, kSoftCream, Colors.orange, Colors.amber],
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 80),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withAlpha(51),
+                            blurRadius: 20,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Great Job!',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              color: kSageGreen,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            '$scorePercent%',
+                            style: const TextStyle(
+                              fontSize: 64,
+                              fontWeight: FontWeight.bold,
+                              color: kDeepGreen,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '$score/${widget.questions.length} Correct',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context, {
+                                'completed': true,
+                                'score': scorePercent,
+                              }),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kSageGreen,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Back to Dashboard',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 80),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final question = widget.questions[currentQ];
+    return Scaffold(
+      body: Stack(
+        children: [
+          AnimatedBubblesBackground(
+            colors: [kSageGreen, kDeepGreen, kSoftCream, Colors.orange, Colors.amber],
+          ),
+          Column(
+            children: [
+              AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: kTextDark),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: Text(
+                  'Meaning Match ${currentQ + 1}/${widget.questions.length}',
+                  style: const TextStyle(color: kTextDark),
+                ),
+                centerTitle: true,
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withAlpha(51),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            const Text(
+                              'What is the meaning of:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              question['question'],
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: kDeepGreen,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      ...List.generate(
+                        4,
+                        (index) {
+                          final isSelected = selectedOption == index;
+                          final isCorrect = index == question['correctIndex'];
+                          final showResult = selectedOption != null;
+
+                          Color bgColor = Colors.white;
+                          Color borderColor = Colors.grey.shade200;
+                          Color textColor = kTextDark;
+
+                          if (showResult) {
+                            if (isCorrect) {
+                              bgColor = Colors.green.shade50;
+                              borderColor = Colors.green.shade300;
+                              textColor = Colors.green.shade800;
+                            } else if (isSelected && !isCorrect) {
+                              bgColor = Colors.red.shade50;
+                              borderColor = Colors.red.shade300;
+                              textColor = Colors.red.shade800;
+                            }
+                          } else if (isSelected) {
+                            bgColor = kSageGreen.withAlpha(31);
+                            borderColor = kSageGreen;
+                          }
+
+                          return GestureDetector(
+                            onTap: selectedOption == null
+                                ? () => _answer(index)
+                                : null,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: bgColor,
+                                border: Border.all(color: borderColor, width: 2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      question['options'][index],
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: textColor,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                  if (showResult && isCorrect)
+                                    const Icon(Icons.check_circle,
+                                        color: Colors.green)
+                                  else if (showResult && isSelected && !isCorrect)
+                                    const Icon(Icons.cancel, color: Colors.red),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- 4B. SYNONYM MATCH PRACTICE ---
+class SynonymMatchPage extends StatefulWidget {
+  const SynonymMatchPage({super.key});
+
+  @override
+  State<SynonymMatchPage> createState() => _SynonymMatchPageState();
+}
+
+class _SynonymMatchPageState extends State<SynonymMatchPage> {
+  final StorageService _storageService = StorageService();
+  late Future<List<Map<String, dynamic>>> _questionsFuture;
+  late final AudioPlayer _audioPlayer;
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+    _questionsFuture = _fetchQuestions();
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchQuestions() async {
+    final allQuestions = sampleSynonymMatch['questions'] as List<dynamic>;
+    final shuffled = [...allQuestions]..shuffle(Random());
+    final randomTen = shuffled.take(10).toList();
+    return randomTen.map((q) => Map<String, dynamic>.from(q as Map)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _questionsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Synonym Match')),
+            body: Center(child: Text('Error: ${snapshot.error}')),
+          );
+        }
+        final questions = snapshot.data ?? [];
+        return SynonymMatchView(
+          questions: questions,
+          audioPlayer: _audioPlayer,
+          storageService: _storageService,
+        );
+      },
+    );
+  }
+}
+
+class SynonymMatchView extends StatefulWidget {
+  final List<Map<String, dynamic>> questions;
+  final AudioPlayer audioPlayer;
+  final StorageService storageService;
+
+  const SynonymMatchView({
+    super.key,
+    required this.questions,
+    required this.audioPlayer,
+    required this.storageService,
+  });
+
+  @override
+  State<SynonymMatchView> createState() => _SynonymMatchViewState();
+}
+
+class _SynonymMatchViewState extends State<SynonymMatchView> {
+  int currentQ = 0;
+  int score = 0;
+  int? selectedOption;
+  bool isFinished = false;
+
+  Future<void> _playCorrectSound() async {
+    try {
+      await widget.audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  Future<void> _playErrorSound() async {
+    try {
+      await widget.audioPlayer.play(
+        UrlSource('https://assets.mixkit.co/active_storage/sfx/2956/2956-preview.mp3'),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  void _triggerWrongFeedback() {
+    HapticFeedback.vibrate();
+    _playErrorSound();
+  }
+
+  void _answer(int index) {
+    if (selectedOption != null) return;
+
+    final isCorrect = index == widget.questions[currentQ]['correctIndex'];
+
+    setState(() {
+      selectedOption = index;
+      if (isCorrect) {
+        score++;
+        _playCorrectSound();
+      } else {
+        _triggerWrongFeedback();
+      }
+    });
+
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      if (currentQ < widget.questions.length - 1) {
+        setState(() {
+          currentQ++;
+          selectedOption = null;
+        });
+      } else {
+        setState(() {
+          isFinished = true;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isFinished) {
+      final scorePercent = ((score / widget.questions.length) * 100).toStringAsFixed(0);
+      widget.storageService.addHistoryEntry('practice', 'Synonym Match', '$scorePercent%');
+      return Scaffold(
+        body: Stack(
+          children: [
+            AnimatedBubblesBackground(
+              colors: [kSageGreen, kDeepGreen, kSoftCream, Colors.purple, Colors.deepPurple],
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 80),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withAlpha(51),
+                            blurRadius: 20,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Excellent!',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              color: kSageGreen,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            '$scorePercent%',
+                            style: const TextStyle(
+                              fontSize: 64,
+                              fontWeight: FontWeight.bold,
+                              color: kDeepGreen,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '$score/${widget.questions.length} Correct',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context, {
+                                'completed': true,
+                                'score': scorePercent,
+                              }),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kSageGreen,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Back to Dashboard',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 80),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final question = widget.questions[currentQ];
+    return Scaffold(
+      body: Stack(
+        children: [
+          AnimatedBubblesBackground(
+            colors: [kSageGreen, kDeepGreen, kSoftCream, Colors.purple, Colors.deepPurple],
+          ),
+          Column(
+            children: [
+              AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: kTextDark),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: Text(
+                  'Synonym Match ${currentQ + 1}/${widget.questions.length}',
+                  style: const TextStyle(color: kTextDark),
+                ),
+                centerTitle: true,
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withAlpha(51),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            const Text(
+                              'Find a similar word:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              question['question'],
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: kDeepGreen,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      ...List.generate(
+                        4,
+                        (index) {
+                          final isSelected = selectedOption == index;
+                          final isCorrect = index == question['correctIndex'];
+                          final showResult = selectedOption != null;
+
+                          Color bgColor = Colors.white;
+                          Color borderColor = Colors.grey.shade200;
+                          Color textColor = kTextDark;
+
+                          if (showResult) {
+                            if (isCorrect) {
+                              bgColor = Colors.green.shade50;
+                              borderColor = Colors.green.shade300;
+                              textColor = Colors.green.shade800;
+                            } else if (isSelected && !isCorrect) {
+                              bgColor = Colors.red.shade50;
+                              borderColor = Colors.red.shade300;
+                              textColor = Colors.red.shade800;
+                            }
+                          } else if (isSelected) {
+                            bgColor = kSageGreen.withAlpha(31);
+                            borderColor = kSageGreen;
+                          }
+
+                          return GestureDetector(
+                            onTap: selectedOption == null
+                                ? () => _answer(index)
+                                : null,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: bgColor,
+                                border: Border.all(color: borderColor, width: 2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      question['options'][index],
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: textColor,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                  if (showResult && isCorrect)
+                                    const Icon(Icons.check_circle,
+                                        color: Colors.green)
+                                  else if (showResult && isSelected && !isCorrect)
+                                    const Icon(Icons.cancel, color: Colors.red),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
