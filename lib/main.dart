@@ -136,14 +136,17 @@ class StorageService {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DatabaseService.initialize();
+  
+  // Pastikan ini ada dan ditunggu
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
   ));
+  
   runApp(const VocabZenApp());
 }
 
@@ -184,7 +187,7 @@ class AuthWrapper extends StatelessWidget {
           );
         }
         if (snapshot.hasError) {
-          // Handle error gracefully - show login page instead of red error screen
+          // Handle error gracefully
           return const LoginPage();
         }
         if (snapshot.hasData && snapshot.data != null) {
@@ -427,14 +430,14 @@ class _LoginPageState extends State<LoginPage> {
                                     try {
                                       await _authService.signInWithGoogle();
                                     } catch (e) {
-                                      if (!mounted) return;
                                       setState(() => _isLoading = false);
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                            content: Text('Failed to sign in: $e')),
-                                      );
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                              content: Text('Failed to sign in: $e')),
+                                        );
+                                      }
                                     }
                                   },
                                   isLoading: _isLoading,
@@ -600,7 +603,7 @@ class _DashboardPageState extends State<DashboardPage> {
   final User? _user = FirebaseAuth.instance.currentUser;
   late Future<List<String>> _vocabCategoriesFuture;
   late Future<Map<String, dynamic>> _grammarQuizFuture;
-  late String _userName;
+  String _userName = 'Learner';
 
   final Set<String> completedCategories = {};
   int completedQuizzes = 0;
@@ -626,7 +629,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<List<String>> _fetchVocabCategories() async {
-    // Get categories from SQLite database
+    // Get categories from Firestore via DatabaseService
     final dbService = DatabaseService();
     return dbService.getCategories();
   }
@@ -1418,7 +1421,7 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
       return words.map((w) => {
         'word': w['word'],
         'pronounce': w['pronounce'],
-        'desc': w['description'],
+        'desc': w['desc'], // Perbaikan: Menggunakan 'desc' sesuai format Firestore
       }).toList();
     }
     throw Exception('Words not found for this category.');
