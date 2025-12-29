@@ -1,13 +1,14 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shimmer/shimmer.dart';
-
-
-
+import 'package:vocab/firebase_options.dart';
+import 'package:vocab/data/sample_data.dart';
 
 // --- PALETTE ---
 // Warna Zen
@@ -44,13 +45,40 @@ class AuthService {
     }
   }
 
+  Future<User?> signInWithEmailPassword(String email, String password) async {
+    try {
+      final UserCredential userCredential =
+          await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return userCredential.user;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
+    try {
+      await _googleSignIn.signOut();
+    } catch (e) {
+      // User might not be logged in with Google, that's okay
+    }
     await _auth.signOut();
   }
 }
 
-
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+  ));
+  runApp(const VocabZenApp());
+}
 
 class VocabZenApp extends StatelessWidget {
   const VocabZenApp({super.key});
@@ -108,7 +136,49 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
+  bool _showEmailForm = false;
   final AuthService _authService = AuthService();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleEmailLogin() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all fields')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await _authService.signInWithEmailPassword(
+        _emailController.text,
+        _passwordController.text,
+      );
+      // On success, AuthWrapper will handle navigation
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      String errorMessage = 'Failed to sign in';
+      if (e.toString().contains('user-not-found')) {
+        errorMessage = 'User not found';
+      } else if (e.toString().contains('wrong-password')) {
+        errorMessage = 'Wrong password';
+      } else if (e.toString().contains('invalid-email')) {
+        errorMessage = 'Invalid email format';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -118,89 +188,176 @@ class _LoginPageState extends State<LoginPage> {
           Positioned(
             top: -50,
             right: -50,
-            child: _buildBlurBlob(200, kSageGreen.withAlpha(77)),
+            child: _buildBlurBlob(200, kSageGreen.withValues(alpha: 0.3)),
           ),
           Positioned(
             bottom: -50,
             left: -50,
-            child: _buildBlurBlob(250, kDeepGreen.withAlpha(51)),
+            child: _buildBlurBlob(250, kDeepGreen.withValues(alpha: 0.2)),
           ),
           Center(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    "Vocab.",
-                    style: TextStyle(
-                      fontSize: 64,
-                      fontWeight: FontWeight.w300,
-                      letterSpacing: -2,
-                      color: kDeepGreen,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Vocab.",
+                      style: TextStyle(
+                        fontSize: 64,
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: -2,
+                        color: kDeepGreen,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    "MASTERY THROUGH SERENITY",
-                    style: TextStyle(
-                      fontSize: 12,
-                      letterSpacing: 3,
-                      color: Colors.grey,
+                    const SizedBox(height: 8),
+                    const Text(
+                      "MASTERY THROUGH SERENITY",
+                      style: TextStyle(
+                        fontSize: 12,
+                        letterSpacing: 3,
+                        color: Colors.grey,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 60),
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(153),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withAlpha(204)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: kDeepGreen.withAlpha(13),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        )
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          "Mulai perjalanan bahasa Anda dengan ketenangan pikiran.",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: kTextDark.withAlpha(179),
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildButton(
-                          text: "Continue with Google",
-                          icon: Icons.login,
-                          onTap: () async {
-                            if (_isLoading) return;
-                            setState(() => _isLoading = true);
-                            try {
-                              await _authService.signInWithGoogle();
-                              // On success, AuthWrapper will handle navigation
-                            } catch (e) {
-                              if (mounted) {
-                                setState(() => _isLoading = false);
-                                // ignore: use_build_context_synchronously
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text('Failed to sign in: $e')),
-                                );
-                              }
-                            }
-                          },
-                          isLoading: _isLoading,
-                        ),
-                      ],
-                    ),
-                  )
-                ],
+                    const SizedBox(height: 60),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(153),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: Colors.white.withAlpha(204)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: kDeepGreen.withAlpha(13),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          )
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          if (!_showEmailForm)
+                            Column(
+                              children: [
+                                Text(
+                                  "Start your language journey with a peace of mind.",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: kTextDark.withAlpha(179),
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                _buildButton(
+                                  text: "Continue with Google",
+                                  icon: Icons.login,
+                                  onTap: () async {
+                                    if (_isLoading) return;
+                                    setState(() => _isLoading = true);
+                                    try {
+                                      await _authService.signInWithGoogle();
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      setState(() => _isLoading = false);
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text('Failed to sign in: $e')),
+                                      );
+                                    }
+                                  },
+                                  isLoading: _isLoading,
+                                ),
+                                const SizedBox(height: 16),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() => _showEmailForm = true);
+                                  },
+                                  child: Text(
+                                    "Or sign in with email",
+                                    style: TextStyle(
+                                      color: kDeepGreen,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Column(
+                              children: [
+                                Text(
+                                  "Sign in with Email",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: kTextDark,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                TextField(
+                                  controller: _emailController,
+                                  decoration: InputDecoration(
+                                    hintText: "Email",
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
+                                  enabled: !_isLoading,
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _passwordController,
+                                  obscureText: true,
+                                  decoration: InputDecoration(
+                                    hintText: "Password",
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
+                                  enabled: !_isLoading,
+                                ),
+                                const SizedBox(height: 24),
+                                _buildButton(
+                                  text: "Sign In",
+                                  icon: Icons.login,
+                                  onTap: _handleEmailLogin,
+                                  isLoading: _isLoading,
+                                ),
+                                const SizedBox(height: 16),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() => _showEmailForm = false);
+                                  },
+                                  child: Text(
+                                    "Back to Google sign in",
+                                    style: TextStyle(
+                                      color: kDeepGreen,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
               ),
             ),
           ),
@@ -286,7 +443,8 @@ class _DashboardPageState extends State<DashboardPage> {
   final AuthService _authService = AuthService();
   final User? _user = FirebaseAuth.instance.currentUser;
   late Future<List<String>> _vocabCategoriesFuture;
-  late Future<DocumentSnapshot> _grammarQuizFuture;
+  late Future<Map<String, dynamic>> _grammarQuizFuture;
+  bool _isLoggingOut = false;
 
   final Set<String> completedCategories = {};
 
@@ -298,12 +456,13 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<List<String>> _fetchVocabCategories() async {
-    final snapshot = await FirebaseFirestore.instance.collection('vocab').get();
-    return snapshot.docs.map((doc) => doc.id).toList();
+    // Get categories from sample data
+    return sampleVocab.keys.toList();
   }
 
-  Future<DocumentSnapshot> _fetchGrammarQuiz() {
-    return FirebaseFirestore.instance.collection('grammar').doc('quiz1').get();
+  Future<Map<String, dynamic>> _fetchGrammarQuiz() {
+    // Return sample grammar quiz data
+    return Future.value(sampleGrammarQuiz);
   }
 
   void _markComplete(String category) {
@@ -349,10 +508,29 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.grey),
-            onPressed: () async {
-              await _authService.signOut();
-            },
+            icon: _isLoggingOut
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout, color: Colors.grey),
+            onPressed: _isLoggingOut
+                ? null
+                : () async {
+                    setState(() => _isLoggingOut = true);
+                    try {
+                      await _authService.signOut();
+                      // AuthWrapper will handle navigation when user becomes null
+                    } catch (e) {
+                      if (!mounted) return;
+                      setState(() => _isLoggingOut = false);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Logout failed: $e')),
+                      );
+                    }
+                  },
           )
         ],
       ),
@@ -364,15 +542,13 @@ class _DashboardPageState extends State<DashboardPage> {
             const Text("Grammar Mastery",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
-            FutureBuilder<DocumentSnapshot>(
+            FutureBuilder<Map<String, dynamic>>(
               future: _grammarQuizFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return _buildShimmerGrammarCard();
                 }
-                if (snapshot.hasError ||
-                    !snapshot.hasData ||
-                    !snapshot.data!.exists) {
+                if (snapshot.hasError || !snapshot.hasData) {
                   return const SizedBox.shrink();
                 }
                 return _buildGrammarCard(context);
@@ -492,7 +668,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         fontSize: 24,
                         fontWeight: FontWeight.bold)),
                 SizedBox(height: 8),
-                Text("10 Pertanyaan Cepat",
+                Text("10 Quick Questions",
                     style: TextStyle(color: Colors.white70)),
               ],
             ),
@@ -618,15 +794,9 @@ class _VocabPlayerPageState extends State<VocabPlayerPage> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchWords(String category) async {
-    final docSnapshot = await FirebaseFirestore.instance
-        .collection('vocab')
-        .doc(category)
-        .get();
-    if (docSnapshot.exists) {
-      final data = docSnapshot.data();
-      if (data != null && data['words'] is List) {
-        return List<Map<String, dynamic>>.from(data['words']);
-      }
+    final words = sampleVocab[category];
+    if (words != null) {
+      return words.map((w) => Map<String, dynamic>.from(w)).toList();
     }
     throw Exception('Words not found for this category.');
   }
@@ -715,26 +885,13 @@ class VocabPlayerView extends StatefulWidget {
 }
 
 class _VocabPlayerViewState extends State<VocabPlayerView> {
-  late PageController _pageController;
   int currentIndex = 0;
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
 
   void _nextCard() {
     if (currentIndex < widget.words.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
+      setState(() {
+        currentIndex++;
+      });
     } else {
       Navigator.pop(context, true);
     }
@@ -742,10 +899,9 @@ class _VocabPlayerViewState extends State<VocabPlayerView> {
 
   void _prevCard() {
     if (currentIndex > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
+      setState(() {
+        currentIndex--;
+      });
     }
   }
 
@@ -754,20 +910,23 @@ class _VocabPlayerViewState extends State<VocabPlayerView> {
     return Column(
       children: [
         Expanded(
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: widget.words.length,
-            onPageChanged: (index) {
-              setState(() {
-                currentIndex = index;
-              });
-            },
-            itemBuilder: (context, index) {
-              return Center(
-                child: FlippableCard(
-                    word: Map<String, String>.from(widget.words[index])),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              return ScaleTransition(
+                scale: animation,
+                child: FadeTransition(
+                  opacity: animation,
+                  child: child,
+                ),
               );
             },
+            child: Center(
+              key: ValueKey<int>(currentIndex),
+              child: FlippableCard(
+                word: Map<String, String>.from(widget.words[currentIndex]),
+              ),
+            ),
           ),
         ),
         Padding(
@@ -888,12 +1047,13 @@ class _FlippableCardState extends State<FlippableCard>
     return Container(
       width: 300,
       height: 400,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: kSageGreen,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withAlpha(13),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 20,
               offset: const Offset(0, 10))
         ],
@@ -901,21 +1061,20 @@ class _FlippableCardState extends State<FlippableCard>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-              width: 60,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: kSageGreen.withAlpha(128),
-                  borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 40),
+          const Spacer(),
           Text(word['word']!,
               style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
-                  color: kTextDark)),
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(blurRadius: 10, color: Colors.black26)
+                  ])),
           const SizedBox(height: 20),
           Text("Tap to reveal",
-              style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
+          const Spacer(),
         ],
       ),
     );
@@ -979,17 +1138,8 @@ class _GrammarQuizPageState extends State<GrammarQuizPage> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchQuestions() async {
-    final docSnapshot = await FirebaseFirestore.instance
-        .collection('grammar')
-        .doc('quiz1')
-        .get();
-    if (docSnapshot.exists) {
-      final data = docSnapshot.data();
-      if (data != null && data['questions'] is List) {
-        return List<Map<String, dynamic>>.from(data['questions']);
-      }
-    }
-    throw Exception('Questions not found.');
+    final questions = sampleGrammarQuiz['questions'] as List<dynamic>;
+    return questions.map((q) => Map<String, dynamic>.from(q as Map)).toList();
   }
 
   @override
