@@ -1,11 +1,11 @@
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:vocab/firebase_options.dart';
 import 'package:vocab/data/sample_data.dart';
@@ -65,6 +65,69 @@ class AuthService {
       // User might not be logged in with Google, that's okay
     }
     await _auth.signOut();
+  }
+}
+
+// --- STORAGE SERVICE ---
+class StorageService {
+  static const String _completedCategoriesKey = 'completed_categories';
+  static const String _completedQuizzesKey = 'completed_quizzes';
+  static const String _userNameKey = 'user_name';
+  static const String _historyKey = 'learning_history';
+
+  Future<Set<String>> getCompletedCategories() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_completedCategoriesKey) ?? [];
+    return list.toSet();
+  }
+
+  Future<void> saveCompletedCategories(Set<String> categories) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_completedCategoriesKey, categories.toList());
+  }
+
+  Future<int> getCompletedQuizzes() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_completedQuizzesKey) ?? 0;
+  }
+
+  Future<void> saveCompletedQuizzes(int count) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_completedQuizzesKey, count);
+  }
+
+  Future<String> getUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userNameKey) ?? 'Learner';
+  }
+
+  Future<void> saveUserName(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userNameKey, name);
+  }
+
+  Future<List<Map<String, dynamic>>> getHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final historyJson = prefs.getStringList(_historyKey) ?? [];
+    return historyJson.map((json) {
+      final parts = json.split('|');
+      return {
+        'type': parts[0], // 'vocab' or 'quiz'
+        'name': parts[1],
+        'timestamp': DateTime.parse(parts[2]),
+        'score': parts.length > 3 ? parts[3] : null,
+      };
+    }).toList();
+  }
+
+  Future<void> addHistoryEntry(String type, String name, [String? score]) async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = prefs.getStringList(_historyKey) ?? [];
+    final timestamp = DateTime.now().toIso8601String();
+    final entry = '$type|$name|$timestamp${score != null ? '|$score' : ''}';
+    history.insert(0, entry); // Add to beginning for latest first
+    if (history.length > 100) history.removeLast(); // Keep only last 100
+    await prefs.setStringList(_historyKey, history);
   }
 }
 
@@ -441,18 +504,33 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final AuthService _authService = AuthService();
+  final StorageService _storageService = StorageService();
   final User? _user = FirebaseAuth.instance.currentUser;
   late Future<List<String>> _vocabCategoriesFuture;
   late Future<Map<String, dynamic>> _grammarQuizFuture;
-  bool _isLoggingOut = false;
+  late String _userName;
 
   final Set<String> completedCategories = {};
+  int completedQuizzes = 0;
 
   @override
   void initState() {
     super.initState();
     _vocabCategoriesFuture = _fetchVocabCategories();
     _grammarQuizFuture = _fetchGrammarQuiz();
+    _loadPersistentData();
+  }
+
+  Future<void> _loadPersistentData() async {
+    final categories = await _storageService.getCompletedCategories();
+    final quizzes = await _storageService.getCompletedQuizzes();
+    final userName = await _storageService.getUserName();
+    
+    setState(() {
+      completedCategories.addAll(categories);
+      completedQuizzes = quizzes;
+      _userName = userName;
+    });
   }
 
   Future<List<String>> _fetchVocabCategories() async {
@@ -469,6 +547,8 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() {
       completedCategories.add(category);
     });
+    _storageService.saveCompletedCategories(completedCategories);
+    _storageService.addHistoryEntry('vocab', category);
   }
 
   IconData _getIconForCategory(String category) {
@@ -489,13 +569,13 @@ class _DashboardPageState extends State<DashboardPage> {
     return Scaffold(
       backgroundColor: kBackground,
       appBar: AppBar(
-        backgroundColor: Colors.white.withAlpha(204),
+        backgroundColor: Colors.white.withValues(alpha: 0.8),
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Halo, ${_user?.displayName?.split(' ')[0] ?? 'Learner'}",
-                style: TextStyle(
+            Text("Halo, ${_userName.split(' ')[0]}",
+                style: const TextStyle(
                     color: kTextDark,
                     fontSize: 20,
                     fontWeight: FontWeight.bold)),
@@ -508,29 +588,8 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
         actions: [
           IconButton(
-            icon: _isLoggingOut
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.logout, color: Colors.grey),
-            onPressed: _isLoggingOut
-                ? null
-                : () async {
-                    setState(() => _isLoggingOut = true);
-                    try {
-                      await _authService.signOut();
-                      // AuthWrapper will handle navigation when user becomes null
-                    } catch (e) {
-                      if (!mounted) return;
-                      setState(() => _isLoggingOut = false);
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Logout failed: $e')),
-                      );
-                    }
-                  },
+            icon: const Icon(Icons.person, color: Colors.grey),
+            onPressed: _showProfileBottomSheet,
           )
         ],
       ),
@@ -637,9 +696,16 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildGrammarCard(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(context,
+      onTap: () async {
+        final result = await Navigator.push(context,
             MaterialPageRoute(builder: (_) => const GrammarQuizPage()));
+        if (result == true && mounted) {
+          setState(() {
+            completedQuizzes++;
+          });
+          _storageService.saveCompletedQuizzes(completedQuizzes);
+          _storageService.addHistoryEntry('quiz', 'Grammar Quiz', '$completedQuizzes');
+        }
       },
       child: Container(
         height: 160,
@@ -774,6 +840,264 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       ),
     );
+  }
+
+  void _showProfileBottomSheet() {
+    final TextEditingController nameController = TextEditingController(text: _userName);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            left: 24,
+            right: 24,
+            top: 24,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Profile',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // User Avatar & Name
+              Center(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: const BoxDecoration(
+                        color: kSageGreen,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _user?.email ?? 'user@example.com',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // Edit Name
+              const Text(
+                'Nama Lengkap',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  hintText: 'Masukkan nama anda',
+                  filled: true,
+                  fillColor: kBackground,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Stats Section
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: kBackground,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Progress Belajar',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        Column(
+                          children: [
+                            const Icon(Icons.book, color: kSageGreen, size: 28),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${completedCategories.length}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Vocab Selesai',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            const Icon(Icons.quiz, color: kDeepGreen, size: 28),
+                            const SizedBox(height: 8),
+                            Text(
+                              '$completedQuizzes',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Quiz Selesai',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // History Section
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => HistoryPage(storageService: _storageService),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.history, color: kSageGreen),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Riwayat Belajar',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Save & Logout Buttons
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kDeepGreen,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () async {
+                    setState(() => _userName = nameController.text);
+                    await _storageService.saveUserName(nameController.text);
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nama berhasil diperbarui')),
+                    );
+                  },
+                  child: const Text(
+                    'Simpan Perubahan',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: const BorderSide(color: Colors.red),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _logout();
+                  },
+                  child: const Text(
+                    'Logout',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _authService.signOut();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Logout failed: $e')),
+      );
+    }
   }
 }
 
@@ -1276,7 +1600,7 @@ class _GrammarQuizViewState extends State<GrammarQuizView> {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(context, true),
                     child: const Text("Back to Dashboard"),
                   ),
                 )
@@ -1371,6 +1695,174 @@ class _GrammarQuizViewState extends State<GrammarQuizView> {
           ),
         )
       ],
+    );
+  }
+}
+
+// --- 5. HISTORY PAGE ---
+class HistoryPage extends StatefulWidget {
+  final StorageService storageService;
+  const HistoryPage({super.key, required this.storageService});
+
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> {
+  late Future<List<Map<String, dynamic>>> _historyFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _historyFuture = widget.storageService.getHistory();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBackground,
+      appBar: AppBar(
+        backgroundColor: Colors.white.withValues(alpha: 0.8),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.grey),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Riwayat Belajar',
+          style: TextStyle(color: kTextDark, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _historyFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          final history = snapshot.data ?? [];
+          if (history.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.history, size: 64, color: Colors.grey[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Belum ada riwayat belajar',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: history.length,
+            itemBuilder: (context, index) {
+              final item = history[index];
+              final isVocab = item['type'] == 'vocab';
+              final timestamp = item['timestamp'] as DateTime;
+              final formattedDate =
+                  '${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade100),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withAlpha(13),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: isVocab ? kSageGreen : kDeepGreen,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isVocab ? Icons.book : Icons.quiz,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['name'] as String,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isVocab ? 'Vocabulary Completed' : 'Quiz Completed',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            formattedDate,
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (item['score'] != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: kSageGreen.withAlpha(31),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '#${item['score']}',
+                          style: const TextStyle(
+                            color: kSageGreen,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.check_circle,
+                        color: kSageGreen,
+                        size: 20,
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
